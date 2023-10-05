@@ -11,6 +11,7 @@ use libp2p::{
         upgrade,
     },
     dcutr, dns, identify, identity, noise, ping, quic, relay,
+    perf::{Run, RunDuration, RunParams},
     swarm::{NetworkBehaviour, Swarm, SwarmBuilder, SwarmEvent},
     tcp, yamux, PeerId,
 };
@@ -36,6 +37,9 @@ struct Args {
     /// Peer ID of the remote peer to hole punch to.
     #[arg(long)]
     remote_peer_id: Option<PeerId>,
+
+    // TODO: add transports option for TCP vs QUIC
+    // https://github.com/libp2p/rust-libp2p/blob/7d1d67cad3847a845ad50d9e56b3b68ca53f5e22/protocols/perf/src/bin/perf.rs#L44
 }
 
 #[derive(Clone, Debug, PartialEq, Parser)]
@@ -56,11 +60,21 @@ impl FromStr for Mode {
 }
 
 #[derive(NetworkBehaviour)]
-struct Behaviour {
+struct ClientBehaviour {
     relay_client: relay::client::Behaviour,
     ping: ping::Behaviour,
     identify: identify::Behaviour,
     dcutr: dcutr::Behaviour,
+    perf: libp2p_perf::client::Behaviour,
+}
+
+#[derive(NetworkBehaviour)]
+struct ServerBehaviour {
+    relay_client: relay::client::Behaviour,
+    ping: ping::Behaviour,
+    identify: identify::Behaviour,
+    dcutr: dcutr::Behaviour,
+    perf: libp2p_perf::server::Behaviour,
 }
 
 #[async_std::main]
@@ -168,10 +182,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!("{:?}", event)
             }
             SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
+            SwarmEvent::Behaviour(()) => {
+                info!("Finished benchmark run with peer")
+            }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
                 info!("Established connection to {:?} via {:?}", peer_id, endpoint);
+                if args.mode == Mode::Dial {
+                    info!("Initiating benchmark");
+                    benchmark(
+                        &mut swarm,
+                        peer_id,
+                        args.upload_bytes.unwrap(),
+                        args.download_bytes.unwrap(),
+                    ).await?;
+                }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 info!("Outgoing connection error to {:?}: {:?}", peer_id, error);
@@ -219,6 +245,29 @@ async fn create_swarm(secret_key_seed: u8) -> Result<Swarm<Behaviour>, Box<dyn E
     };
 
     Ok(SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build())
+}
+
+async fn benchmark(
+    swarm: &mut Swarm<libp2p_perf::client::Behavior>,
+    remote_peer_id: PeerId,
+    upload_bytes: u8,
+    download_bytes: u8,
+) -> Result<RunDuration> {
+    let params = RunParams { to_send: upload_bytes, to_receive: download_bytes };
+
+    swarm.behaviour_mut().perf(remote_peer_id, params)?;
+
+    let duration = match swarm.next().await.unwrap() {
+        SwarmEvent::Behaviour(libp2p_perf::client::Event {
+            id: _,
+            result: Ok(duration),
+        }) => duration,
+        e => panic!("{e:?}"),
+    };
+
+    info!("{}", Run { params, duration });
+
+    Ok(duration)
 }
 
 fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
