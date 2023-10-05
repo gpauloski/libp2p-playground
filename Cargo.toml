@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "perf-test",
+    "benchmark",
     "relay-server",
 ]
 resolver = "2"
