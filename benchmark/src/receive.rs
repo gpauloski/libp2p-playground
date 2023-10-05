@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::Parser;
 use env_logger;
-use futures::{StreamExt, future::Either};
+use futures::{future::Either, StreamExt};
 use libp2p::{
     core::{
         multiaddr::{Multiaddr, Protocol},
@@ -16,11 +16,11 @@ use libp2p::{
 };
 use log::info;
 
-use benchmark::{generate_ed25519, TransportMethod, swarm_listen};
+use benchmark::{generate_ed25519, swarm_listen, TransportMethod};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args{
+struct Args {
     // Seed used to generate deterministic peer id.
     #[arg(short, long)]
     seed: u8,
@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let args = Args::parse();
 
-    info!("DCUTR Bandwidth Benchmark");
+    info!("DCUTR Bandwidth Benchmark: Receiver");
     info!("Relay multiaddr: {}", args.relay_multiaddr);
     info!("Transport method: {:?}", args.transport);
 
@@ -59,7 +59,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     swarm_listen(&mut swarm, args.transport).await?;
     learn_external_address(&mut swarm, args.relay_multiaddr.clone()).await?;
 
-    swarm.listen_on(args.relay_multiaddr.with(Protocol::P2pCircuit)).unwrap();
+    swarm
+        .listen_on(args.relay_multiaddr.with(Protocol::P2pCircuit))
+        .unwrap();
 
     loop {
         match swarm.next().await.unwrap() {
@@ -132,13 +134,10 @@ async fn build_swarm(seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
         dcutr: dcutr::Behaviour::new(local_peer_id),
     };
 
-    Ok(
-        SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id)
-        .build()
-    )
+    Ok(SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build())
 }
 
-async fn learn_external_address (
+async fn learn_external_address(
     swarm: &mut Swarm<Behaviour>,
     relay_address: Multiaddr,
 ) -> Result<(), Box<dyn Error>> {
@@ -155,9 +154,7 @@ async fn learn_external_address (
             SwarmEvent::Dialing { .. } => {}
             SwarmEvent::ConnectionEstablished { .. } => {}
             SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
-            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Sent {
-                ..
-            })) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Sent { .. })) => {
                 info!("Notified relay of its public address");
                 told_relay_observed_addr = true;
             }

@@ -24,8 +24,9 @@ pub fn generate_ed25519(seed: u8) -> Keypair {
 pub async fn swarm_listen<B: NetworkBehaviour>(
     swarm: &mut Swarm<B>,
     transport: TransportMethod,
-) -> Result<(), Box<dyn Error>> 
-    where <B as NetworkBehaviour>::ToSwarm: std::fmt::Debug 
+) -> Result<(), Box<dyn Error>>
+where
+    <B as NetworkBehaviour>::ToSwarm: std::fmt::Debug,
 {
     let listen_address = match transport {
         TransportMethod::Tcp => "/ip4/0.0.0.0/tcp/0".parse()?,
