@@ -35,14 +35,17 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmBuilder, SwarmEvent},
     tcp,
 };
+use log::info;
 use std::error::Error;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
 
     let opt = Opt::parse();
-    println!("opt: {opt:?}");
+    info!("opt: {opt:?}");
 
     // Create a static known PeerId based on given secret
     let local_key: identity::Keypair = generate_ed25519(opt.secret_key_seed);
@@ -108,10 +111,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         swarm.add_external_address(observed_addr.clone());
                     }
 
-                    println!("{event:?}")
+                    info!("{event:?}")
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Listening on {address:?}");
+                    info!("Listening on {address:?}");
                 }
                 _ => {}
             }
