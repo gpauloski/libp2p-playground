@@ -11,7 +11,7 @@ use libp2p::{
         upgrade,
     },
     dcutr, dns, identify, identity, noise, ping, quic, relay,
-    swarm::{NetworkBehaviour, SwarmBuilder, SwarmEvent},
+    swarm::{NetworkBehaviour, Swarm, SwarmBuilder, SwarmEvent},
     tcp, yamux, PeerId,
 };
 use log::info;
@@ -55,59 +55,21 @@ impl FromStr for Mode {
     }
 }
 
+#[derive(NetworkBehaviour)]
+struct Behaviour {
+    relay_client: relay::client::Behaviour,
+    ping: ping::Behaviour,
+    identify: identify::Behaviour,
+    dcutr: dcutr::Behaviour,
+}
+
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let args = Args::parse();
 
-    let local_key = generate_ed25519(args.secret_key_seed);
-    let local_peer_id = PeerId::from(local_key.public());
-
-    let (relay_transport, client) = relay::client::new(local_peer_id);
-
-    let transport = {
-        let relay_tcp_quic_transport = relay_transport
-            .or_transport(tcp::async_io::Transport::new(
-                tcp::Config::default().port_reuse(true),
-            ))
-            .upgrade(upgrade::Version::V1)
-            .authenticate(noise::Config::new(&local_key).unwrap())
-            .multiplex(yamux::Config::default())
-            .or_transport(quic::async_std::Transport::new(quic::Config::new(
-                &local_key,
-            )));
-
-        dns::DnsConfig::system(relay_tcp_quic_transport)
-            .await
-            .unwrap()
-            .map(|either_output, _| match either_output {
-                Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-                Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-            })
-            .boxed()
-    };
-
-    #[derive(NetworkBehaviour)]
-    struct Behaviour {
-        relay_client: relay::client::Behaviour,
-        ping: ping::Behaviour,
-        identify: identify::Behaviour,
-        dcutr: dcutr::Behaviour,
-    }
-
-    let behaviour = Behaviour {
-        relay_client: client,
-        ping: ping::Behaviour::new(ping::Config::new()),
-        identify: identify::Behaviour::new(identify::Config::new(
-            "/TODO/0.0.1".to_string(),
-            local_key.public(),
-        )),
-        dcutr: dcutr::Behaviour::new(local_peer_id),
-    };
-
-    let mut swarm =
-        SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build();
+    let mut swarm = create_swarm(args.secret_key_seed).await.unwrap();
 
     swarm
         .listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse().unwrap())
@@ -118,19 +80,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Wait to listen on all interfaces.
     let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
-    // loop {
-    //     match swarm.select_next_some().await {
-    //         SwarmEvent::NewListenAddr { address, .. } => {
-    //             info!("Listening on {address:?}");
-    //         }
-    //         SwarmEvent::Behaviour(event) => {
-    //             panic!("{event:?}");
-    //         }
-    //         // Likely listening on all interfaces now so break out and continue.
-    //         _ => { break; }
-    //     }
-    // }
-
     loop {
         futures::select! {
             event = swarm.next() => {
@@ -230,6 +179,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
             _ => {}
         }
     }
+}
+
+async fn create_swarm(secret_key_seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
+    let local_key = generate_ed25519(secret_key_seed);
+    let local_peer_id = PeerId::from(local_key.public());
+
+    let (relay_transport, client) = relay::client::new(local_peer_id);
+
+    let transport = {
+        let relay_tcp_quic_transport = relay_transport
+            .or_transport(tcp::async_io::Transport::new(
+                tcp::Config::default().port_reuse(true),
+            ))
+            .upgrade(upgrade::Version::V1)
+            .authenticate(noise::Config::new(&local_key).unwrap())
+            .multiplex(yamux::Config::default())
+            .or_transport(quic::async_std::Transport::new(quic::Config::new(
+                &local_key,
+            )));
+
+        dns::DnsConfig::system(relay_tcp_quic_transport)
+            .await?
+            .map(|either_output, _| match either_output {
+                Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+                Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+            })
+            .boxed()
+    };
+
+    let behaviour = Behaviour {
+        relay_client: client,
+        ping: ping::Behaviour::new(ping::Config::new()),
+        identify: identify::Behaviour::new(identify::Config::new(
+            "/TODO/0.0.1".to_string(),
+            local_key.public(),
+        )),
+        dcutr: dcutr::Behaviour::new(local_peer_id),
+    };
+
+    Ok(SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build())
 }
 
 fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
