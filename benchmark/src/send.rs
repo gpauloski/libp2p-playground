@@ -14,6 +14,7 @@ use libp2p::{
     swarm::{NetworkBehaviour, Swarm, SwarmBuilder, SwarmEvent},
     tcp, yamux, PeerId,
 };
+use libp2p_perf::{Run, RunParams};
 use log::info;
 
 use benchmark::{generate_ed25519, swarm_listen, TransportMethod};
@@ -33,6 +34,10 @@ struct Args {
     #[arg(long)]
     receiver_peer_id: PeerId,
 
+    // Payload bytes.
+    #[arg(long)]
+    payload_bytes: usize,
+
     // Transport method (tcp or quic-v1).
     // Should match the transport method of relay_multiaddr.
     #[arg(short, long, value_enum, default_value_t=TransportMethod::Tcp)]
@@ -45,6 +50,7 @@ struct Behaviour {
     ping: ping::Behaviour,
     identify: identify::Behaviour,
     dcutr: dcutr::Behaviour,
+    perf: libp2p_perf::client::Behaviour,
 }
 
 #[async_std::main]
@@ -71,6 +77,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .unwrap();
 
+    let params = RunParams {
+        to_send: args.payload_bytes,
+        to_receive: args.payload_bytes,
+    };
+    let mut started_benchmark = false;
+
     loop {
         match swarm.next().await.unwrap() {
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -84,6 +96,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
                 info!("{:?}", event)
             }
+            SwarmEvent::Behaviour(BehaviourEvent::Dcutr(
+                dcutr::Event::DirectConnectionUpgradeSucceeded { .. },
+            )) => {
+                info!("Direct connection upgrade successful!");
+                if !started_benchmark {
+                    swarm
+                        .behaviour_mut()
+                        .perf
+                        .perf(args.receiver_peer_id, params)?;
+                    started_benchmark = true;
+                }
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Dcutr(
+                dcutr::Event::DirectConnectionUpgradeFailed {
+                    remote_peer_id: _,
+                    error: e,
+                },
+            )) => {
+                panic!("{e:?}")
+            }
             SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
                 info!("{:?}", event)
             }
@@ -91,6 +123,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!("{:?}", event)
             }
             SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
+            SwarmEvent::Behaviour(BehaviourEvent::Perf(libp2p_perf::client::Event {
+                id: _,
+                result: Ok(duration),
+            })) => {
+                assert!(started_benchmark, "Benchmark not started yet!");
+                info!("Benchmark completed: {}", Run { params, duration });
+                return Ok(());
+            }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
@@ -140,6 +180,7 @@ async fn build_swarm(seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
             local_key.public(),
         )),
         dcutr: dcutr::Behaviour::new(local_peer_id),
+        perf: Default::default(),
     };
 
     Ok(SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build())

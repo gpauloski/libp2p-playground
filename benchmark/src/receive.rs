@@ -41,6 +41,7 @@ struct Behaviour {
     ping: ping::Behaviour,
     identify: identify::Behaviour,
     dcutr: dcutr::Behaviour,
+    perf: libp2p_perf::server::Behaviour,
 }
 
 #[async_std::main]
@@ -132,6 +133,7 @@ async fn build_swarm(seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
             local_key.public(),
         )),
         dcutr: dcutr::Behaviour::new(local_peer_id),
+        perf: Default::default(),
     };
 
     Ok(SwarmBuilder::with_async_std_executor(transport, behaviour, local_peer_id).build())
