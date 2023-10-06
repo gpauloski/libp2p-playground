@@ -1,7 +1,6 @@
 use std::error::Error;
 
 use clap::Parser;
-use env_logger;
 use futures::{future::Either, StreamExt};
 use libp2p::{
     core::{
@@ -40,7 +39,7 @@ struct Args {
 
     // Transport method (tcp or quic-v1).
     // Should match the transport method of relay_multiaddr.
-    #[arg(short, long, value_enum, default_value_t=TransportMethod::Tcp)]
+    #[arg(short, long, value_enum, default_value_t=TransportMethod::TcpBandwidth)]
     transport: TransportMethod,
 }
 
@@ -65,7 +64,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Relay multiaddr: {}", args.relay_multiaddr);
     info!("Transport method: {:?}", args.transport);
 
-    let mut swarm = build_swarm(args.seed).await?;
+    let tcp_config = match args.transport {
+        TransportMethod::TcpBandwidth => tcp::Config::default().nodelay(false),
+        _ => tcp::Config::default().port_reuse(true),
+    };
+
+    let mut swarm = build_swarm(args.seed, tcp_config).await?;
     swarm_listen(&mut swarm, args.transport).await?;
     learn_external_address(&mut swarm, args.relay_multiaddr.clone()).await?;
 
@@ -144,7 +148,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn build_swarm(seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
+async fn build_swarm(
+    seed: u8,
+    tcp_config: tcp::Config,
+) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
     let local_key = generate_ed25519(seed);
     let local_peer_id = PeerId::from(local_key.public());
 
@@ -152,9 +159,7 @@ async fn build_swarm(seed: u8) -> Result<Swarm<Behaviour>, Box<dyn Error>> {
 
     let transport = {
         let relay_tcp_quic_transport = relay_transport
-            .or_transport(tcp::async_io::Transport::new(
-                tcp::Config::default().port_reuse(true),
-            ))
+            .or_transport(tcp::async_io::Transport::new(tcp_config))
             .upgrade(upgrade::Version::V1)
             .authenticate(noise::Config::new(&local_key).unwrap())
             .multiplex(yamux::Config::default())
