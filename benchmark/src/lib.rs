@@ -10,8 +10,8 @@ use log::info;
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum TransportMethod {
-    TcpBandwidth,
-    TcpLatency,
+    Tcp,
+    TcpNoDelay,
     QuicV1,
 }
 
@@ -30,9 +30,7 @@ where
     <B as NetworkBehaviour>::ToSwarm: std::fmt::Debug,
 {
     let listen_address = match transport {
-        TransportMethod::TcpBandwidth | TransportMethod::TcpLatency => {
-            "/ip4/0.0.0.0/tcp/0".parse()?
-        }
+        TransportMethod::Tcp | TransportMethod::TcpNoDelay => "/ip4/0.0.0.0/tcp/0".parse()?,
         TransportMethod::QuicV1 => "/ip4/0.0.0.0/udp/0/quic-v1".parse()?,
     };
     swarm.listen_on(listen_address)?;

@@ -30,7 +30,7 @@ struct Args {
 
     // Transport method (tcp or quic-v1).
     // Should match the transport method of relay_multiaddr.
-    #[arg(short, long, value_enum, default_value_t=TransportMethod::TcpBandwidth)]
+    #[arg(short, long, value_enum, default_value_t=TransportMethod::Tcp)]
     transport: TransportMethod,
 }
 
@@ -55,10 +55,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Relay multiaddr: {}", args.relay_multiaddr);
     info!("Transport method: {:?}", args.transport);
 
-    let tcp_config = match args.transport {
-        TransportMethod::TcpBandwidth => tcp::Config::default().nodelay(false),
-        _ => tcp::Config::default().port_reuse(true),
+    let mut tcp_config = match args.transport {
+        TransportMethod::TcpNoDelay => tcp::Config::default().nodelay(true),
+        TransportMethod::Tcp => tcp::Config::default().nodelay(false),
+        _ => tcp::Config::default(),
     };
+    tcp_config = tcp_config.port_reuse(true);
 
     let mut swarm = build_swarm(args.seed, tcp_config).await?;
     swarm_listen(&mut swarm, args.transport).await?;
