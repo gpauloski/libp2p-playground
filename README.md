@@ -1,8 +1,10 @@
 # libp2p-playground
 
+Repository of [libp2p](https://libp2p.io/) experiments.
+
 ## DCUtR Bandwith Benchmark
 
-The DCUTR bandwidth benchmark evaluates the bandwidth between two peers
+The DCUtR bandwidth benchmark evaluates the bandwidth between two peers
 that established a connection via libp2p'2 hole punching mechanism: DCUtR.
 
 Sources:
@@ -40,5 +42,5 @@ $ cargo run --bin benchmark-receive -- --seed 1 --relay-multiaddr /ip4/$RELAY_SE
 
 **Sender**
 ```bash
-$ cargo run --bin benchmark-send -- --seed 2 --relay-multiaddr /ip4/$RELAY_SERVER_IP/tcp/1234/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN --receiver-peer-id 12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --payload-bytes 10000000
+$ cargo run --bin benchmark-send -- --seed 2 --relay-multiaddr /ip4/$RELAY_SERVER_IP/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN --receiver-peer-id 12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --payload-bytes 10000000
 ```
